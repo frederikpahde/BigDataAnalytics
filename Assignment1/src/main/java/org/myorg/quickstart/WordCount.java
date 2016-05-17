@@ -20,9 +20,13 @@ package org.myorg.quickstart;
 import org.apache.flink.api.java.DataSet;
 import org.apache.flink.api.java.ExecutionEnvironment;
 import org.apache.flink.api.common.functions.FlatMapFunction;
+import org.apache.flink.api.common.operators.Order;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.tuple.Tuple9;
+import org.apache.flink.core.fs.FileSystem.WriteMode;
 import org.apache.flink.util.Collector;
+
+import akka.remote.transport.netty.NettyTransportSettings.Mode;
 /**
  * Implements the "WordCount" program that computes a simple word occurrence histogram
  * over some sample data
@@ -58,7 +62,8 @@ public class WordCount {
 				.groupBy(0)
 				.sum(1);
 		counts.print();
-
+		counts.sortPartition(1, Order.DESCENDING).writeAsCsv("C:/Users/D059348/dev/result", WriteMode.OVERWRITE);
+		env.execute();
 	}
 
 	//
