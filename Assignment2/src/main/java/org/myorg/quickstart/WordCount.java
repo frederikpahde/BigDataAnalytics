@@ -22,7 +22,7 @@ public class WordCount {
 	
 
 	public static <O> void main(String[] args) throws Exception {
-		double minsupport = 0.01;
+		double minsupport = 0.3;
 		double minconf = 0.1;
 		
 		String csvFile = "C:/Users/D059348/Documents/HU/SemII/BDA/BMS-POS.dat";
@@ -48,15 +48,19 @@ public class WordCount {
 				counts.flatMap(new FrequentOneItemMapper((int)(minsupport * counts.count())));
 		
 		System.out.println(frequentOneItemsets.count());
+		frequentOneItemsets.print();
 		
 		//Create 2-itemsets candidates
 		DataSet<Tuple2<Integer, Integer>> prefixes =
 				frequentOneItemsets.map(new OneItemsetPrefixMapper());
 		
 		
-		DataSet<Tuple2<Integer[], Integer>> candidates = 
+		DataSet<Tuple2<int[], Integer>> candidates = 
 				prefixes.groupBy(0)
 				.reduceGroup(new CandidateReducer());
+		
+		System.out.println(candidates.count());
+		
 		
 		
 		//Creation of baskets <basketID, Arraylist with itemIDs>
@@ -81,8 +85,14 @@ public class WordCount {
 					}
 				});
 		
+		DataSet<Tuple2<int[], Integer>> twoItemsetCounter = 
+				baskets.flatMap(new ItemsetCounter())
+				.withBroadcastSet(candidates, "candidates")
+				.groupBy(0)
+				.sum(1);
+		//DataSet<Tuple2<Integer[], Integer>> twoItemsetCounter = baskets.flatMap(new ItemsetCounter());
 		
-		baskets.print();
+		twoItemsetCounter.print();
 	
 		
 		//System.out.println(candidates.count());
@@ -95,6 +105,7 @@ public class WordCount {
 	//
 	// 	User Functions
 	//
+	 
 
 	/**
 	 * Implements the string tokenizer that splits sentences into words as a user-defined
