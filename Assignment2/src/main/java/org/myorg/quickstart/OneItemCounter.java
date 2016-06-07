@@ -4,7 +4,7 @@ import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.util.Collector;
 
-public final class Large1ItemMapper implements FlatMapFunction<Tuple2<Integer, Integer>, Tuple2<Integer, Integer>> {
+public final class OneItemCounter implements FlatMapFunction<Tuple2<Integer, Integer>, Tuple2<Integer, Integer>> {
 
 	
 	/**

@@ -10,11 +10,12 @@ import org.apache.flink.util.Collector;
 
 public class WordCount {
 
-	double minsupport = 0.01;
-	double minconf = 0.1;
+	
 
 	public static void main(String[] args) throws Exception {
-
+		double minsupport = 0.01;
+		double minconf = 0.1;
+		
 		String csvFile = "C:/Users/D059348/Documents/HU/SemII/BDA/BMS-POS.dat";
 		
 		// set up the execution environment
@@ -22,15 +23,24 @@ public class WordCount {
 
 		DataSet<Tuple2<Integer, Integer>> csvInput = env.readCsvFile(csvFile).fieldDelimiter("\t").types(Integer.class, Integer.class);
 
+		//Count 1-Itemsets
 		DataSet<Tuple2<Integer, Integer>> counts =
 				// split up the lines in pairs (2-tuples) containing: (word,1)
-				csvInput.flatMap(new Large1ItemMapper())
+				csvInput.flatMap(new OneItemCounter())
 				// group by the tuple field "0" and sum up tuple field "1"
 				.groupBy(0)
 				.sum(1);
 
 		// execute and print result
-		counts.print();
+		//counts.print();
+		
+		//Filter frequent 1-Itemsets
+		DataSet<Tuple2<Integer, Integer>> frequentOneItemsets =
+				counts.flatMap(new FrequentOneItemMapper((int)(minsupport * counts.count())));
+		
+		frequentOneItemsets.print();
+
+		//ystem.out.println("#frequent1itemsets: " + frequentOneItemsets.count());
 
 	}
 
