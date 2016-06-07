@@ -4,9 +4,15 @@ package org.myorg.quickstart;
 import org.apache.flink.api.java.DataSet;
 import org.apache.flink.api.java.ExecutionEnvironment;
 import org.apache.flink.api.java.io.CsvReader;
+import org.apache.flink.api.java.operators.AggregateOperator;
 import org.apache.flink.api.java.operators.GroupReduceOperator;
+import org.apache.flink.api.java.operators.UnsortedGrouping;
+
+import java.util.ArrayList;
+
 import org.apache.flink.api.common.functions.CoGroupFunction;
 import org.apache.flink.api.common.functions.FlatMapFunction;
+import org.apache.flink.api.common.functions.GroupCombineFunction;
 import org.apache.flink.api.common.functions.GroupReduceFunction;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.util.Collector;
@@ -52,8 +58,35 @@ public class WordCount {
 				prefixes.groupBy(0)
 				.reduceGroup(new CandidateReducer());
 		
-		System.out.println(candidates.count());
-		candidates.print();
+		
+		//Creation of baskets <basketID, Arraylist with itemIDs>
+		DataSet<Tuple2<Integer, ArrayList<Integer>>> baskets =
+				csvInput.groupBy(0)
+				.reduceGroup(new GroupReduceFunction<Tuple2<Integer,Integer>, Tuple2<Integer, ArrayList<Integer>>>() {
+					private static final long serialVersionUID = 1L;
+
+					@Override
+					public void reduce(Iterable<Tuple2<Integer, Integer>> iterator,
+							Collector<Tuple2<Integer, ArrayList<Integer>>> out) throws Exception {
+						ArrayList<Integer> list = new ArrayList<>();
+						int basketID = -1;
+						for (Tuple2<Integer, Integer> i : iterator) {
+							if (basketID == -1){
+								basketID = i.f0;
+							}
+							list.add(i.f1);
+							
+						}
+						out.collect(new Tuple2<Integer, ArrayList<Integer>>(basketID, list));	
+					}
+				});
+		
+		
+		baskets.print();
+	
+		
+		//System.out.println(candidates.count());
+		//candidates.print();
 
 		//System.out.println("#frequent1itemsets: " + frequentOneItemsets.count());
 
