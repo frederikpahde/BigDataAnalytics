@@ -4,7 +4,10 @@ package org.myorg.quickstart;
 import org.apache.flink.api.java.DataSet;
 import org.apache.flink.api.java.ExecutionEnvironment;
 import org.apache.flink.api.java.io.CsvReader;
+import org.apache.flink.api.java.operators.GroupReduceOperator;
+import org.apache.flink.api.common.functions.CoGroupFunction;
 import org.apache.flink.api.common.functions.FlatMapFunction;
+import org.apache.flink.api.common.functions.GroupReduceFunction;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.util.Collector;
 
@@ -12,7 +15,7 @@ public class WordCount {
 
 	
 
-	public static void main(String[] args) throws Exception {
+	public static <O> void main(String[] args) throws Exception {
 		double minsupport = 0.01;
 		double minconf = 0.1;
 		
@@ -38,9 +41,21 @@ public class WordCount {
 		DataSet<Tuple2<Integer, Integer>> frequentOneItemsets =
 				counts.flatMap(new FrequentOneItemMapper((int)(minsupport * counts.count())));
 		
-		frequentOneItemsets.print();
+		System.out.println(frequentOneItemsets.count());
+		
+		//Create 2-itemsets candidates
+		DataSet<Tuple2<Integer, Integer>> prefixes =
+				frequentOneItemsets.map(new OneItemsetPrefixMapper());
+		
+		
+		DataSet<Tuple2<Integer[], Integer>> candidates = 
+				prefixes.groupBy(0)
+				.reduceGroup(new CandidateReducer());
+		
+		System.out.println(candidates.count());
+		candidates.print();
 
-		//ystem.out.println("#frequent1itemsets: " + frequentOneItemsets.count());
+		//System.out.println("#frequent1itemsets: " + frequentOneItemsets.count());
 
 	}
 
