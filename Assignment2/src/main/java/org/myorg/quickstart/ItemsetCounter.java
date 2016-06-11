@@ -2,14 +2,9 @@ package org.myorg.quickstart;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.List;
 
 import org.apache.flink.api.common.functions.FlatMapFunction;
-import org.apache.flink.api.common.functions.IterationRuntimeContext;
-import org.apache.flink.api.common.functions.RichFunction;
 import org.apache.flink.api.common.functions.RichMapFunction;
-import org.apache.flink.api.common.functions.RuntimeContext;
-import org.apache.flink.api.java.DataSet;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.util.Collector;
@@ -38,14 +33,10 @@ public final class ItemsetCounter extends RichMapFunction implements FlatMapFunc
 				candidateIsInBasket = candidateIsInBasket && basket.contains(item);
 			}
 			if (candidateIsInBasket){
+
 				out.collect(new Tuple2<int[], Integer>(candidate.f0, 1));
 			}
-			
-			
 		}
-		
-		
-		
 	}
 
 	@Override

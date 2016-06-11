@@ -1,29 +1,24 @@
 package org.myorg.quickstart;
 
 
-import org.apache.flink.api.java.DataSet;
-import org.apache.flink.api.java.ExecutionEnvironment;
-import org.apache.flink.api.java.io.CsvReader;
-import org.apache.flink.api.java.operators.AggregateOperator;
-import org.apache.flink.api.java.operators.GroupReduceOperator;
-import org.apache.flink.api.java.operators.UnsortedGrouping;
-
 import java.util.ArrayList;
 
-import org.apache.flink.api.common.functions.CoGroupFunction;
-import org.apache.flink.api.common.functions.FlatMapFunction;
-import org.apache.flink.api.common.functions.GroupCombineFunction;
 import org.apache.flink.api.common.functions.GroupReduceFunction;
+import org.apache.flink.api.java.DataSet;
+import org.apache.flink.api.java.ExecutionEnvironment;
+import org.apache.flink.api.java.io.TextOutputFormat.TextFormatter;
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.api.java.tuple.Tuple3;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.util.Collector;
+
 
 public class WordCount {
 
-	
-
 	public static <O> void main(String[] args) throws Exception {
-		double minsupport = 0.3;
-		double minconf = 0.1;
+		double minsupport = 0.01;
+		double minconf = 0.5;
+		Configuration config = new Configuration();
 		
 		String csvFile = "C:/Users/D059348/Documents/HU/SemII/BDA/BMS-POS.dat";
 		
@@ -31,37 +26,6 @@ public class WordCount {
 		final ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
 
 		DataSet<Tuple2<Integer, Integer>> csvInput = env.readCsvFile(csvFile).fieldDelimiter("\t").types(Integer.class, Integer.class);
-
-		//Count 1-Itemsets
-		DataSet<Tuple2<Integer, Integer>> counts =
-				// split up the lines in pairs (2-tuples) containing: (word,1)
-				csvInput.flatMap(new OneItemCounter())
-				// group by the tuple field "0" and sum up tuple field "1"
-				.groupBy(0)
-				.sum(1);
-
-		// execute and print result
-		//counts.print();
-		
-		//Filter frequent 1-Itemsets
-		DataSet<Tuple2<Integer, Integer>> frequentOneItemsets =
-				counts.flatMap(new FrequentOneItemMapper((int)(minsupport * counts.count())));
-		
-		System.out.println(frequentOneItemsets.count());
-		frequentOneItemsets.print();
-		
-		//Create 2-itemsets candidates
-		DataSet<Tuple2<Integer, Integer>> prefixes =
-				frequentOneItemsets.map(new OneItemsetPrefixMapper());
-		
-		
-		DataSet<Tuple2<int[], Integer>> candidates = 
-				prefixes.groupBy(0)
-				.reduceGroup(new CandidateReducer());
-		
-		System.out.println(candidates.count());
-		
-		
 		
 		//Creation of baskets <basketID, Arraylist with itemIDs>
 		DataSet<Tuple2<Integer, ArrayList<Integer>>> baskets =
@@ -85,46 +49,85 @@ public class WordCount {
 					}
 				});
 		
-		DataSet<Tuple2<int[], Integer>> twoItemsetCounter = 
-				baskets.flatMap(new ItemsetCounter())
-				.withBroadcastSet(candidates, "candidates")
+		config.setInteger("minsupport", (int)(minsupport * baskets.count()));
+		config.setDouble("minconf", minconf);
+
+		//Count 1-Itemsets
+		DataSet<Tuple2<int[], Integer>> counts =
+				// split up the lines in pairs (2-tuples) containing: (word,1)
+				csvInput.flatMap(new OneItemCounter())
+				// group by the tuple field "0" and sum up tuple field "1"
 				.groupBy(0)
 				.sum(1);
-		//DataSet<Tuple2<Integer[], Integer>> twoItemsetCounter = baskets.flatMap(new ItemsetCounter());
 		
-		twoItemsetCounter.print();
-	
+		//Filter frequent 1-Itemsets
+		DataSet<Tuple2<int[], Integer>> frequentOneItemsets = counts.filter(new ItemsetFilter()).withParameters(config);
+		System.out.println(frequentOneItemsets.count());
 		
-		//System.out.println(candidates.count());
-		//candidates.print();
-
-		//System.out.println("#frequent1itemsets: " + frequentOneItemsets.count());
-
-	}
-
-	//
-	// 	User Functions
-	//
-	 
-
-	/**
-	 * Implements the string tokenizer that splits sentences into words as a user-defined
-	 * FlatMapFunction. The function takes a line (String) and splits it into
-	 * multiple pairs in the form of "(word,1)" (Tuple2<String, Integer>).
-	 */
-	public static final class LineSplitter implements FlatMapFunction<String, Tuple2<String, Integer>> {
-
-		@Override
-		public void flatMap(String value, Collector<Tuple2<String, Integer>> out) {
-			// normalize and split the line
-			String[] tokens = value.toLowerCase().split("\\W+");
-
-			// emit the pairs
-			for (String token : tokens) {
-				if (token.length() > 0) {
-					out.collect(new Tuple2<String, Integer>(token, 1));
-				}
+		ArrayList<DataSet<Tuple2<int[], Integer>>> result = new ArrayList<>();
+		ArrayList<DataSet<Tuple3<int[], Integer, Double>>> resultRules = new ArrayList<>();
+		result.add(frequentOneItemsets);
+		
+		int k = 1;
+		while(true){
+			DataSet<Tuple2<int[], Integer>> previousFrequentTuple = result.get(result.size()-1);
+			DataSet<Tuple2<int[], Integer>> candidates = 
+					previousFrequentTuple.map(new OneItemsetPrefixMapper())
+					.groupBy(0)
+					.reduceGroup(new CandidateReducer());
+			
+			DataSet<Tuple2<int[], Integer>> frequentItemsets = 
+					baskets.flatMap(new ItemsetCounter())
+					.withBroadcastSet(candidates, "candidates")		
+					.groupBy(0)
+					.sum(1)
+					.filter(new ItemsetFilter()).withParameters(config);
+			
+			if (frequentItemsets.count() == 0){
+				break;
+			}else{
+				result.add(frequentItemsets);
 			}
+			
+			//Find Association Rules
+			DataSet<Tuple3<int[], Integer, Double>> rules = frequentItemsets.flatMap(new ItemsetSplitMapper())
+			.join(result.get(result.size()-2))
+			.where(0).equalTo(0)
+			.flatMap(new ConfidenceMapper())
+			.filter(new ConfidenceFilter())
+			.withParameters(config);
+			
+			rules.writeAsFormattedText("C:/Users/D059348/Documents/result"+k+".csv", new TextFormatter<Tuple3<int[],Integer,Double>>() {
+				private static final long serialVersionUID = 1L;
+
+				@Override
+				public String format(Tuple3<int[], Integer, Double> in) {
+					String res = "[";
+					for (int i : in.f0) {
+						res = res + i + ",";
+					}
+					res = res.substring(0, res.length()-1) + "]";
+					res = res + "\t --> \t" + in.f1 + " (" + in.f2 + " %)";
+					return res;
+				}
+			});
+			//rules.writeAsCsv("C:/Users/D059348/Documents/result"+k+".csv");
+			resultRules.add(rules);
+			k++;
+		}
+		int i = 0;
+		int[] ruleCounts = new int[resultRules.size()];
+		for (DataSet<Tuple3<int[], Integer, Double>> dataSet : resultRules) {
+			//dataSet.writeAsCsv("C:/Users/D059348/Documents/result.csv");
+			ruleCounts[i] = (int) dataSet.count();
+			//i++;
+			//System.out.println("write reslt");
+		
+		}
+		System.out.println(resultRules.size());
+		
+		for (int j = 0; j < ruleCounts.length; j++) {
+			System.out.println("number rules: " + ruleCounts[j]);
 		}
 	}
 }
